@@ -1,20 +1,21 @@
 package com.ria.loanflow.service.impl;
 
+import com.ria.loanflow.common.enums.CustomerStatus;
 import com.ria.loanflow.dtos.req.CustomerRequest;
+import com.ria.loanflow.dtos.req.UpdateCustomerRequest;
 import com.ria.loanflow.dtos.res.CustomerResponse;
 import com.ria.loanflow.entity.Customer;
 import com.ria.loanflow.exception.DuplicateResourceException;
+import com.ria.loanflow.exception.ResourceNotFoundException;
 import com.ria.loanflow.mapper.CustomerMapper;
 import com.ria.loanflow.repository.CustomerRepository;
 import com.ria.loanflow.service.CustomerService;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 @Slf4j
 @Service
 public class CustomerServiceImpl implements CustomerService {
@@ -63,23 +64,74 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public CustomerResponse getCustomerById(Long id) {
+    public CustomerResponse getCustomerById(String customerId) {
+
+        Customer customer =  customerRepository.findByCustomerIdAndStatus(customerId, CustomerStatus.ACTIVE)
+                .orElseThrow(()-> new ResourceNotFoundException( "Customer not found with ID: " + customerId));
+        return CustomerMapper.toResponse(customer);
+    }
+
+    @Override
+    public Page<CustomerResponse> getAllCustomers() {
         return null;
     }
 
     @Override
-    public List<CustomerResponse> getAllCustomers() {
-        return List.of();
+    public CustomerResponse updateCustomer(String customerId, UpdateCustomerRequest request) {
+        Customer customer = customerRepository.findByCustomerIdAndStatus(customerId, CustomerStatus.ACTIVE)
+                .orElseThrow(()-> new ResourceNotFoundException(  "Customer not found with ID: " + customerId));
+
+        // Check duplicate mobile
+        customerRepository.findByMobile(request.mobile())
+                .ifPresent(existingCustomer -> {
+                    if (!existingCustomer.getCustomerId()
+                            .equals(customerId)) {
+
+                        throw new DuplicateResourceException(
+                                "Customer already exists with mobile: "
+                                        + request.mobile());
+                    }
+                });
+
+        // Check duplicate email
+        if (request.email() != null && !request.email().isBlank()) {
+
+            customerRepository.findByEmail(request.email())
+                    .ifPresent(existingCustomer -> {
+                        if (!existingCustomer.getCustomerId()
+                                .equals(customerId)) {
+
+                            throw new DuplicateResourceException(
+                                    "Customer already exists with email: "
+                                            + request.email());
+                        }
+                    });
+        }
+        customer.setFirstName(request.firstName());
+        customer.setLastName(request.lastName());
+        customer.setMobile(request.mobile());
+        customer.setEmail(request.email());
+        return CustomerMapper.toResponse(customerRepository.save(customer));
+    }
+
+
+
+    @Override
+    public void deleteCustomer(String customerId) {
+        Customer customer = customerRepository.findByCustomerId(customerId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Customer not found with ID: " + customerId));
+
+        customer.setStatus(CustomerStatus.INACTIVE);
+
+        customerRepository.save(customer);
     }
 
     @Override
-    public CustomerResponse updateCustomer(Long id, CustomerRequest request) {
-        return null;
-    }
-
-    @Override
-    public void deleteCustomer(Long id) {
-
+    public Page<CustomerResponse> getAllCustomers(Pageable pageable) {
+        Page<Customer> customers = customerRepository.findByStatus(CustomerStatus.ACTIVE, pageable);
+        return customers.map(CustomerMapper::toResponse);
     }
 
     private String generateCustomerId(Long id) {

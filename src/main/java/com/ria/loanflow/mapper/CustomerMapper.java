@@ -22,7 +22,6 @@ public class CustomerMapper {
 
     public  static CustomerResponse toResponse(Customer customer){
         return new CustomerResponse(
-                customer.getId(),
                 customer.getCustomerId(),
                 customer.getFirstName(),
                 customer.getLastName(),
